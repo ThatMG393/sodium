@@ -21,8 +21,6 @@ public class WeightedRandomListMixin<E extends WeightedEntry> implements Weighte
 
     @Override
     public E sodium$getQuick(RandomSource random) {
-        if (this.totalWeight == 0) return null;
-
         int randomValue = Math.abs((int) random.nextLong()) % this.totalWeight;
 
         int i = 0;

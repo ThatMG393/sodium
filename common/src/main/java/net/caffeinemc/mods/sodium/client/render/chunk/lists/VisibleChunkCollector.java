@@ -8,10 +8,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.OcclusionCuller;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
 
-import java.util.ArrayDeque;
-import java.util.EnumMap;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 
 /**
  * The visible chunk collector is passed to the occlusion graph search culler to
@@ -70,10 +67,10 @@ public class VisibleChunkCollector implements OcclusionCuller.Visitor {
 
     public SortedRenderLists createRenderLists(Viewport viewport) {
         // sort the regions by distance to fix rare region ordering bugs
-        var sectionPos = viewport.getChunkCoord();
-        var cameraX = sectionPos.getX() >> RenderRegion.REGION_WIDTH_SH;
-        var cameraY = sectionPos.getY() >> RenderRegion.REGION_HEIGHT_SH;
-        var cameraZ = sectionPos.getZ() >> RenderRegion.REGION_LENGTH_SH;
+        var transform = viewport.getTransform();
+        var cameraX = transform.intX >> (4 + RenderRegion.REGION_WIDTH_SH);
+        var cameraY = transform.intY >> (4 + RenderRegion.REGION_HEIGHT_SH);
+        var cameraZ = transform.intZ >> (4 + RenderRegion.REGION_LENGTH_SH);
         var size = this.sortedRenderLists.size();
 
         if (sortItems.length < size) {
@@ -98,7 +95,7 @@ public class VisibleChunkCollector implements OcclusionCuller.Visitor {
         }
 
         for (var list : sorted) {
-            list.sortSections(sectionPos, sortItems);
+            list.sortSections(transform, sortItems);
         }
 
         return new SortedRenderLists(sorted);

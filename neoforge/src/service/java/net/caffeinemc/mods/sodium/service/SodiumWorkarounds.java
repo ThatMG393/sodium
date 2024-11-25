@@ -14,8 +14,9 @@ public class SodiumWorkarounds implements GraphicsBootstrapper {
 
     @Override
     public void bootstrap(String[] arguments) {
-        PreLaunchChecks.checkEnvironment();
+        PreLaunchChecks.beforeLWJGLInit();
         GraphicsAdapterProbe.findAdapters();
+        PreLaunchChecks.onGameInit();
         Workarounds.init();
 
         // Context creation happens earlier on NeoForge, so we need to apply this now

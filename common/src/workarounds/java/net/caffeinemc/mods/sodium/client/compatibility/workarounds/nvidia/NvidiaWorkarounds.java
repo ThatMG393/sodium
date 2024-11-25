@@ -17,10 +17,12 @@ import org.lwjgl.opengl.KHRDebug;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Locale;
+
 public class NvidiaWorkarounds {
     private static final Logger LOGGER = LoggerFactory.getLogger("Sodium-NvidiaWorkarounds");
 
-    public static boolean isNvidiaGraphicsCardPresent() {
+    public static boolean isUsingNvidiaGraphicsCard() {
         return GraphicsAdapterProbe.getAdapters()
                 .stream()
                 .anyMatch(adapter -> adapter.vendor() == GraphicsAdapterVendor.NVIDIA);
@@ -62,7 +64,7 @@ public class NvidiaWorkarounds {
         // We can't know if the OpenGL context will actually be initialized using the NVIDIA ICD, but we need to
         // modify the process environment *now* otherwise the driver will initialize with bad settings. For non-NVIDIA
         // drivers, these workarounds are not likely to cause issues.
-        if (!isNvidiaGraphicsCardPresent()) {
+        if (!isUsingNvidiaGraphicsCard()) {
             return;
         }
 
@@ -104,11 +106,14 @@ public class NvidiaWorkarounds {
         WindowsCommandLine.resetCommandLine();
     }
 
-    public static void applyContextChanges(GlContextInfo context) {
+    public static void applyContextChanges(GlContextInfo driver) {
+        var normalizedVendorName = driver.vendor()
+                .toLowerCase(Locale.ROOT);
+
         // The context may not have been initialized with the NVIDIA ICD, even if we think there is an NVIDIA
         // graphics adapter in use. Because enabling these workarounds have the potential to severely hurt performance
         // on other drivers, make sure we exit now.
-        if (GraphicsAdapterVendor.fromContext(context) != GraphicsAdapterVendor.NVIDIA) {
+        if (!normalizedVendorName.startsWith("nvidia")) {
             return;
         }
 

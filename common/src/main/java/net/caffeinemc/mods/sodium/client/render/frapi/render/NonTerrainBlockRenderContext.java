@@ -76,7 +76,7 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
         this.prepareCulling(cull);
         this.prepareAoInfo(model.useAmbientOcclusion());
 
-        ((FabricBakedModel) model).emitBlockQuads(getEmitter(), blockView, state, pos, this.randomSupplier, this::isFaceCulled);
+        ((FabricBakedModel) model).emitBlockQuads(blockView, state, pos, this.randomSupplier, this);
 
         this.level = null;
         this.type = null;
@@ -89,6 +89,7 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
     @Override
     protected void processQuad(MutableQuadViewImpl quad) {
         final RenderMaterial mat = quad.material();
+        final int colorIndex = mat.disableColorIndex() ? -1 : quad.colorIndex();
         final TriState aoMode = mat.ambientOcclusion();
         final ShadeMode shadeMode = mat.shadeMode();
         final LightMode lightMode;
@@ -99,14 +100,14 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
         }
         final boolean emissive = mat.emissive();
 
-        tintQuad(quad);
+        colorizeQuad(quad, colorIndex);
         shadeQuad(quad, lightMode, emissive, shadeMode);
         bufferQuad(quad);
     }
 
-    private void tintQuad(MutableQuadViewImpl quad) {
-        if (quad.tintIndex() != -1) {
-            final int blockColor = 0xFF000000 | this.colorMap.getColor(this.state, this.level, this.pos, quad.tintIndex());
+    private void colorizeQuad(MutableQuadViewImpl quad, int colorIndex) {
+        if (colorIndex != -1) {
+            final int blockColor = 0xFF000000 | this.colorMap.getColor(this.state, this.level, this.pos, colorIndex);
 
             for (int i = 0; i < 4; i++) {
                 quad.color(i, ColorMixer.mulComponentWise(blockColor, quad.color(i)));

@@ -1,8 +1,10 @@
 package net.caffeinemc.mods.sodium.client.compatibility.workarounds;
 
 import net.caffeinemc.mods.sodium.client.compatibility.environment.OsUtils;
-import net.caffeinemc.mods.sodium.client.compatibility.workarounds.intel.IntelWorkarounds;
+import net.caffeinemc.mods.sodium.client.compatibility.environment.probe.GraphicsAdapterProbe;
 import net.caffeinemc.mods.sodium.client.compatibility.workarounds.nvidia.NvidiaWorkarounds;
+import net.caffeinemc.mods.sodium.client.platform.windows.api.d3dkmt.D3DKMT;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,11 +39,11 @@ public class Workarounds {
         var workarounds = EnumSet.noneOf(Reference.class);
         var operatingSystem = OsUtils.getOs();
 
-        if (NvidiaWorkarounds.isNvidiaGraphicsCardPresent()) {
+        if (NvidiaWorkarounds.isUsingNvidiaGraphicsCard()) {
             workarounds.add(Reference.NVIDIA_THREADED_OPTIMIZATIONS_BROKEN);
         }
 
-        if (IntelWorkarounds.isUsingIntelGen8OrOlder()) {
+        if (isUsingIntelGen8OrOlder()) {
             workarounds.add(Reference.INTEL_FRAMEBUFFER_BLIT_CRASH_WHEN_UNFOCUSED);
             workarounds.add(Reference.INTEL_DEPTH_BUFFER_COMPARISON_UNRELIABLE);
         }
@@ -61,6 +63,25 @@ public class Workarounds {
         }
 
         return Collections.unmodifiableSet(workarounds);
+    }
+
+    private static boolean isUsingIntelGen8OrOlder() {
+        if (OsUtils.getOs() != OsUtils.OperatingSystem.WIN) {
+            return false;
+        }
+
+        for (var adapter : GraphicsAdapterProbe.getAdapters()) {
+            if (adapter instanceof D3DKMT.WDDMAdapterInfo wddmAdapterInfo) {
+                @Nullable var driverName = wddmAdapterInfo.getOpenGlIcdName();
+
+                // Intel OpenGL ICD for legacy GPUs
+                if (driverName != null && driverName.matches("ig(7|75|8)icd(32|64)")) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public static boolean isWorkaroundEnabled(Reference id) {

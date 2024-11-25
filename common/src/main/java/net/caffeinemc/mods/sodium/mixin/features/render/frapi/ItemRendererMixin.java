@@ -20,10 +20,9 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.caffeinemc.mods.sodium.client.render.frapi.render.ItemRenderContext;
 import net.fabricmc.fabric.api.renderer.v1.model.FabricBakedModel;
+import net.minecraft.client.color.item.ItemColors;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.ItemRenderer;
-import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
@@ -40,20 +39,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(ItemRenderer.class)
 public abstract class ItemRendererMixin {
+    @Final
     @Shadow
-    private static void renderModelLists(BakedModel bakedModel, int[] is, int i, int j, PoseStack poseStack, VertexConsumer vertexConsumer) {
-    }
+    private ItemColors itemColors;
+
+    @Shadow
+    protected abstract void renderModelLists(BakedModel bakedModel, ItemStack itemStack, int i, int j, PoseStack poseStack, VertexConsumer vertexConsumer);
 
     @Unique
-    private static final ItemRenderContext.VanillaModelBufferer vanillaBufferer = ItemRendererMixin::renderModelLists;
+    private final ItemRenderContext.VanillaModelBufferer vanillaBufferer = this::renderModelLists;
 
     @Unique
-    private static final ThreadLocal<ItemRenderContext> contexts = ThreadLocal.withInitial(() -> new ItemRenderContext(vanillaBufferer));
+    private final ThreadLocal<ItemRenderContext> contexts = ThreadLocal.withInitial(() -> new ItemRenderContext(itemColors, vanillaBufferer));
 
-    @Inject(method = "renderItem", at = @At(value = "HEAD"), cancellable = true)
-    private static void beforeRenderItem(ItemDisplayContext itemDisplayContext, PoseStack poseStack, MultiBufferSource multiBufferSource, int light, int overlay, int[] colors, BakedModel model, RenderType renderType, ItemStackRenderState.FoilType foilType, CallbackInfo ci) {
+    @Inject(method = "renderItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/resources/model/BakedModel;isCustomRenderer()Z"), cancellable = true)
+    private void beforeRenderItem(ItemStack stack, ItemDisplayContext transformMode, PoseStack matrixStack, MultiBufferSource vertexConsumerProvider, int light, int overlay, BakedModel model, boolean invert, CallbackInfo ci) {
         if (!((FabricBakedModel) model).isVanillaAdapter()) {
-            contexts.get().renderModel(itemDisplayContext, poseStack, multiBufferSource, light, overlay, model, colors, renderType, foilType);
+            contexts.get().renderModel(stack, transformMode, invert, matrixStack, vertexConsumerProvider, light, overlay, model);
             ci.cancel();
         }
     }

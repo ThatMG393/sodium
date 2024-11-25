@@ -21,7 +21,6 @@ import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import org.joml.Vector3f;
-import org.joml.Vector3fc;
 
 /**
  * Static routines of general utility for renderer implementations.
@@ -50,7 +49,7 @@ public abstract class GeometryHelper {
      * <p>Derived from the quad face normal and expects convex quads with all points co-planar.
      */
     public static Direction lightFace(QuadView quad) {
-        final Vector3fc normal = quad.faceNormal();
+        final Vector3f normal = quad.faceNormal();
         return switch (GeometryHelper.longestAxis(normal)) {
             case X -> normal.x() > 0 ? Direction.EAST : Direction.WEST;
             case Y -> normal.y() > 0 ? Direction.UP : Direction.DOWN;
@@ -64,7 +63,7 @@ public abstract class GeometryHelper {
     /**
      * @see #longestAxis(float, float, float)
      */
-    public static Direction.Axis longestAxis(Vector3fc vec) {
+    public static Direction.Axis longestAxis(Vector3f vec) {
         return longestAxis(vec.x(), vec.y(), vec.z());
     }
 
