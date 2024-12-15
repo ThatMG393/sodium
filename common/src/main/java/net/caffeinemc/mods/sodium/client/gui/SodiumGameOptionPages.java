@@ -2,37 +2,41 @@ package net.caffeinemc.mods.sodium.client.gui;
 
 import com.google.common.collect.ImmutableList;
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.Monitor;
+import com.mojang.blaze3d.platform.VideoMode;
 import com.mojang.blaze3d.platform.Window;
+import net.caffeinemc.mods.sodium.client.compatibility.environment.OsUtils;
 import net.caffeinemc.mods.sodium.client.gl.arena.staging.MappedStagingBuffer;
 import net.caffeinemc.mods.sodium.client.gl.device.RenderDevice;
 import net.caffeinemc.mods.sodium.client.gui.options.*;
 import net.caffeinemc.mods.sodium.client.gui.options.binding.compat.VanillaBooleanOptionBinding;
-import net.caffeinemc.mods.sodium.client.gui.options.control.ControlValueFormatter;
-import net.caffeinemc.mods.sodium.client.gui.options.control.CyclingControl;
-import net.caffeinemc.mods.sodium.client.gui.options.control.SliderControl;
-import net.caffeinemc.mods.sodium.client.gui.options.control.TickBoxControl;
+import net.caffeinemc.mods.sodium.client.gui.options.control.*;
 import net.caffeinemc.mods.sodium.client.gui.options.storage.MinecraftOptionsStorage;
 import net.caffeinemc.mods.sodium.client.gui.options.storage.SodiumOptionsStorage;
 import net.caffeinemc.mods.sodium.client.compatibility.workarounds.Workarounds;
 import net.caffeinemc.mods.sodium.client.services.PlatformRuntimeInformation;
 import net.minecraft.client.AttackIndicatorStatus;
+import net.minecraft.client.InactivityFpsLimit;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.GraphicsStatus;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.ParticleStatus;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ParticleStatus;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 // TODO: Rename in Sodium 0.6
 public class SodiumGameOptionPages {
     private static final SodiumOptionsStorage sodiumOpts = new SodiumOptionsStorage();
     private static final MinecraftOptionsStorage vanillaOpts = new MinecraftOptionsStorage();
+    private static final Window window = Minecraft.getInstance().getWindow();
 
     public static OptionPage general() {
+        Monitor monitor = window.findBestMonitor();
         List<OptionGroup> groups = new ArrayList<>();
 
         groups.add(OptionGroup.createBuilder()
@@ -90,6 +94,26 @@ public class SodiumGameOptionPages {
                             }
                         }, (opts) -> opts.fullscreen().get())
                         .build())
+                .add(OptionImpl.createBuilder(int.class, vanillaOpts)
+                        .setName(Component.translatable("options.fullscreen.resolution"))
+                        .setTooltip(Component.translatable("sodium.options.fullscreen_resolution.tooltip"))
+                        .setControl(option -> new SliderControl(option, 0, null != monitor? monitor.getModeCount(): 0, 1, ControlValueFormatter.resolution()))
+                        .setBinding((options, value) -> {
+                            if (null != monitor) {
+                                window.setPreferredFullscreenVideoMode(0 == value? Optional.empty(): Optional.of(monitor.getMode(value - 1)));
+                            }
+                        }, options -> {
+                            if (null == monitor) {
+                                return 0;
+                            }
+                            else {
+                                Optional<VideoMode> optional = window.getPreferredFullscreenVideoMode();
+                                return optional.map((videoMode) -> monitor.getVideoModeIndex(videoMode) + 1).orElse(0);
+                            }
+                        })
+                        .setEnabled(() -> OsUtils.getOs() == OsUtils.OperatingSystem.WIN && Minecraft.getInstance().getWindow().findBestMonitor() != null)
+                        .setFlags(OptionFlag.REQUIRES_VIDEOMODE_RELOAD)
+                        .build())
                 .add(OptionImpl.createBuilder(boolean.class, vanillaOpts)
                         .setName(Component.translatable("options.vsync"))
                         .setTooltip(Component.translatable("sodium.options.v_sync.tooltip"))
@@ -103,7 +127,7 @@ public class SodiumGameOptionPages {
                         .setControl(option -> new SliderControl(option, 10, 260, 10, ControlValueFormatter.fpsLimit()))
                         .setBinding((opts, value) -> {
                             opts.framerateLimit().set(value);
-                            Minecraft.getInstance().getWindow().setFramerateLimit(value);
+                            Minecraft.getInstance().getFramerateLimitTracker().setFramerateLimit(value);
                         }, opts -> opts.framerateLimit().get())
                         .build())
                 .build());
@@ -159,7 +183,7 @@ public class SodiumGameOptionPages {
                             if (Minecraft.useShaderTransparency()) {
                                 RenderTarget framebuffer = Minecraft.getInstance().levelRenderer.getCloudsTarget();
                                 if (framebuffer != null) {
-                                    framebuffer.clear(Minecraft.ON_OSX);
+                                    framebuffer.clear();
                                 }
                             }
                         }, opts -> opts.cloudStatus().get())
@@ -310,6 +334,12 @@ public class SodiumGameOptionPages {
                         .setBinding((opts, value) -> opts.performance.useNoErrorGLContext = value, opts -> opts.performance.useNoErrorGLContext)
                         .setEnabled(SodiumGameOptionPages::supportsNoErrorContext)
                         .setFlags(OptionFlag.REQUIRES_GAME_RESTART)
+                        .build())
+                .add(OptionImpl.createBuilder(InactivityFpsLimit.class, vanillaOpts)
+                        .setName(Component.translatable("options.inactivityFpsLimit"))
+                        .setTooltip(v -> Component.translatable(v.getId() == 0 ? "options.inactivityFpsLimit.minimized.tooltip" : "options.inactivityFpsLimit.afk.tooltip"))
+                        .setControl(option -> new CyclingControl<>(option, InactivityFpsLimit.class, new Component[] { Component.translatable("options.inactivityFpsLimit.minimized"), Component.translatable("options.inactivityFpsLimit.afk") }))
+                        .setBinding((opts, value) -> opts.inactivityFpsLimit().set(value), opts -> opts.inactivityFpsLimit().get())
                         .build())
                 .build());
 

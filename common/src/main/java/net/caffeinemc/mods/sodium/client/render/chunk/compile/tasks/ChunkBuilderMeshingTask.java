@@ -3,6 +3,7 @@ package net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks;
 import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.render.chunk.ExtendedBlockEntityType;
+import net.caffeinemc.mods.sodium.client.render.chunk.DefaultChunkRenderer;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildBuffers;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildContext;
@@ -32,6 +33,8 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.chunk.VisGraph;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.profiling.Profiler;
+import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -57,6 +60,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
 
     @Override
     public ChunkBuildOutput execute(ChunkBuildContext buildContext, CancellationToken cancellationToken) {
+        ProfilerFiller profiler = Profiler.get();
         BuiltSectionInfo.Builder renderData = new BuiltSectionInfo.Builder();
         VisGraph occluder = new VisGraph();
 
@@ -82,13 +86,14 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
 
         TranslucentGeometryCollector collector;
         if (SodiumClientMod.options().performance.getSortBehavior() != SortBehavior.OFF) {
-            collector = new TranslucentGeometryCollector(render.getPosition());
+            collector = new TranslucentGeometryCollector(this.render.getPosition());
         } else {
             collector = null;
         }
         BlockRenderer blockRenderer = cache.getBlockRenderer();
         blockRenderer.prepare(buffers, slice, collector);
 
+        profiler.push("render blocks");
         try {
             for (int y = minY; y < maxY; y++) {
                 if (cancellationToken.isCancelled()) {
@@ -130,7 +135,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                             }
                         }
 
-                        if (blockState.isSolidRender(slice, blockPos)) {
+                        if (blockState.isSolidRender()) {
                             occluder.setOpaque(blockPos);
                         }
                     }
@@ -143,8 +148,9 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
             // Create a new crash report for other exceptions (e.g. thrown in getQuads)
             throw fillCrashInfo(CrashReport.forThrowable(ex, "Encountered exception while building chunk meshes"), slice, blockPos);
         }
+        profiler.popPush("mesh appenders");
 
-        PlatformLevelRenderHooks.INSTANCE.runChunkMeshAppenders(renderContext.getRenderers(), type -> buffers.get(DefaultMaterials.forRenderLayer(type)).asFallbackVertexConsumer(DefaultMaterials.forRenderLayer(type), collector),
+        PlatformLevelRenderHooks.INSTANCE.runChunkMeshAppenders(this.renderContext.getRenderers(), type -> buffers.get(DefaultMaterials.forRenderLayer(type)).asFallbackVertexConsumer(DefaultMaterials.forRenderLayer(type), collector),
                 slice);
 
         blockRenderer.release();
@@ -155,11 +161,18 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         }
 
         Map<TerrainRenderPass, BuiltSectionMeshParts> meshes = new Reference2ReferenceOpenHashMap<>();
+        var visibleSlices = DefaultChunkRenderer.getVisibleFaces(
+                (int) this.absoluteCameraPos.x(), (int) this.absoluteCameraPos.y(), (int) this.absoluteCameraPos.z(),
+                this.render.getChunkX(), this.render.getChunkY(), this.render.getChunkZ());
+        profiler.popPush("meshing");
 
         for (TerrainRenderPass pass : DefaultTerrainRenderPasses.ALL) {
-            // consolidate all translucent geometry into UNASSIGNED so that it's rendered
-            // all together if it needs to share an index buffer between the directions
-            BuiltSectionMeshParts mesh = buffers.createMesh(pass, pass.isTranslucent() && sortType.needsDirectionMixing);
+            // if the translucent geometry needs to share an index buffer between the directions,
+            // consolidate all translucent geometry into UNASSIGNED
+            boolean translucentBehavior = collector != null && pass.isTranslucent();
+            boolean forceUnassigned = translucentBehavior && sortType.needsDirectionMixing;
+            boolean sliceReordering = !translucentBehavior || sortType.allowSliceReordering;
+            BuiltSectionMeshParts mesh = buffers.createMesh(pass, visibleSlices, forceUnassigned, sliceReordering);
 
             if (mesh != null) {
                 meshes.put(pass, mesh);
@@ -170,10 +183,13 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         // cancellation opportunity right before translucent sorting
         if (cancellationToken.isCancelled()) {
             meshes.forEach((pass, mesh) -> mesh.getVertexData().free());
+            profiler.pop();
             return null;
         }
 
         renderData.setOcclusionData(occluder.resolve());
+
+        profiler.popPush("translucency sorting");
 
         boolean reuseUploadedData = false;
         TranslucentData translucentData = null;
@@ -185,15 +201,18 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         }
 
         var output = new ChunkBuildOutput(this.render, this.submitTime, translucentData, renderData.build(), meshes);
+
         if (collector != null) {
             if (reuseUploadedData) {
                 output.markAsReusingUploadedData();
             } else if (translucentData instanceof PresentTranslucentData present) {
                 var sorter = present.getSorter();
                 sorter.writeIndexBuffer(this, true);
-                output.copyResultFrom(sorter);
+                output.setSorter(sorter);
             }
         }
+
+        profiler.pop();
 
         return output;
     }

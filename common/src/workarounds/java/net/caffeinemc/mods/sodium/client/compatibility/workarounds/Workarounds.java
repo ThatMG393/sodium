@@ -1,15 +1,15 @@
 package net.caffeinemc.mods.sodium.client.compatibility.workarounds;
 
 import net.caffeinemc.mods.sodium.client.compatibility.environment.OsUtils;
-import net.caffeinemc.mods.sodium.client.compatibility.environment.probe.GraphicsAdapterInfo;
-import net.caffeinemc.mods.sodium.client.compatibility.environment.probe.GraphicsAdapterProbe;
-import net.caffeinemc.mods.sodium.client.compatibility.environment.probe.GraphicsAdapterVendor;
-import net.caffeinemc.mods.sodium.client.platform.windows.api.d3dkmt.D3DKMT;
-import org.jetbrains.annotations.Nullable;
+import net.caffeinemc.mods.sodium.client.compatibility.workarounds.intel.IntelWorkarounds;
+import net.caffeinemc.mods.sodium.client.compatibility.workarounds.nvidia.NvidiaWorkarounds;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -37,14 +37,13 @@ public class Workarounds {
         var workarounds = EnumSet.noneOf(Reference.class);
         var operatingSystem = OsUtils.getOs();
 
-        var graphicsAdapters = GraphicsAdapterProbe.getAdapters();
-
-        if (isUsingNvidiaGraphicsCard(operatingSystem, graphicsAdapters)) {
-            workarounds.add(Reference.NVIDIA_THREADED_OPTIMIZATIONS);
+        if (NvidiaWorkarounds.isNvidiaGraphicsCardPresent()) {
+            workarounds.add(Reference.NVIDIA_THREADED_OPTIMIZATIONS_BROKEN);
         }
 
-        if (checkIntelFramebufferBlitBug()) {
-            workarounds.add(Reference.INTEL_FRAMEBUFFER_BLIT_UNSUPPORTED);
+        if (IntelWorkarounds.isUsingIntelGen8OrOlder()) {
+            workarounds.add(Reference.INTEL_FRAMEBUFFER_BLIT_CRASH_WHEN_UNFOCUSED);
+            workarounds.add(Reference.INTEL_DEPTH_BUFFER_COMPARISON_UNRELIABLE);
         }
 
         if (operatingSystem == OsUtils.OperatingSystem.LINUX) {
@@ -64,31 +63,6 @@ public class Workarounds {
         return Collections.unmodifiableSet(workarounds);
     }
 
-    private static boolean checkIntelFramebufferBlitBug() {
-        if (OsUtils.getOs() != OsUtils.OperatingSystem.WIN) {
-            return false;
-        }
-
-        for (var adapter : GraphicsAdapterProbe.getAdapters()) {
-            if (adapter instanceof D3DKMT.WDDMAdapterInfo wddmAdapterInfo) {
-                @Nullable var driverName = wddmAdapterInfo.getOpenGlIcdName();
-
-                // Intel OpenGL ICD for legacy GPUs
-                if (driverName != null && driverName.matches("ig(7|75|8)icd(32|64)")) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static boolean isUsingNvidiaGraphicsCard(OsUtils.OperatingSystem operatingSystem, Collection<? extends GraphicsAdapterInfo> adapters) {
-
-        return (operatingSystem == OsUtils.OperatingSystem.WIN || operatingSystem == OsUtils.OperatingSystem.LINUX) &&
-                adapters.stream().anyMatch(adapter -> adapter.vendor() == GraphicsAdapterVendor.NVIDIA);
-    }
-
     public static boolean isWorkaroundEnabled(Reference id) {
         return ACTIVE_WORKAROUNDS.get()
                 .contains(id);
@@ -98,21 +72,29 @@ public class Workarounds {
         /**
          * The NVIDIA driver applies "Threaded Optimizations" when Minecraft is detected, causing severe
          * performance issues and crashes.
-         * <a href="https://github.com/CaffeineMC/sodium-fabric/issues/1816">GitHub Issue</a>
+         * <a href="https://github.com/CaffeineMC/sodium/issues/1816">GitHub Issue</a>
          */
-        NVIDIA_THREADED_OPTIMIZATIONS,
+        NVIDIA_THREADED_OPTIMIZATIONS_BROKEN,
 
         /**
          * Requesting a No Error Context causes a crash at startup when using a Wayland session.
-         * <a href="https://github.com/CaffeineMC/sodium-fabric/issues/1624">GitHub Issue</a>
+         * <a href="https://github.com/CaffeineMC/sodium/issues/1624">GitHub Issue</a>
          */
         NO_ERROR_CONTEXT_UNSUPPORTED,
 
         /**
-         * Intel's graphics driver for Gen 7.5 GPUs seems to be faulty and causes a crash when calling
+         * Intel's graphics driver for Gen8 and older seems to be faulty and causes a crash when calling
          * glFramebufferBlit after the window loses focus.
-         * <a href="https://github.com/CaffeineMC/sodium-fabric/issues/2727">GitHub Issue</a>
+         * <a href="https://github.com/CaffeineMC/sodium/issues/2727">GitHub Issue</a>
          */
-        INTEL_FRAMEBUFFER_BLIT_UNSUPPORTED
+        INTEL_FRAMEBUFFER_BLIT_CRASH_WHEN_UNFOCUSED,
+
+        /**
+         * Intel's graphics driver for Gen8 and older does not respect depth comparison rules per the OpenGL
+         * specification, causing block model overlays to Z-fight when the overlay is on a different render pass than
+         * the base model.
+         * <a href="https://github.com/CaffeineMC/sodium/issues/2830">GitHub Issue</a>
+         */
+        INTEL_DEPTH_BUFFER_COMPARISON_UNRELIABLE
     }
 }

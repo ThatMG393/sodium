@@ -18,10 +18,11 @@ package net.caffeinemc.mods.sodium.client.render.frapi.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.caffeinemc.mods.sodium.api.util.ColorARGB;
+import net.caffeinemc.mods.sodium.api.util.ColorMixer;
 import net.caffeinemc.mods.sodium.client.model.light.LightMode;
 import net.caffeinemc.mods.sodium.client.model.light.LightPipelineProvider;
 import net.caffeinemc.mods.sodium.client.model.light.data.SingleBlockLightDataCache;
-import net.caffeinemc.mods.sodium.client.render.frapi.helper.ColorHelper;
 import net.caffeinemc.mods.sodium.client.render.frapi.mesh.MutableQuadViewImpl;
 import net.caffeinemc.mods.sodium.client.render.texture.SpriteFinderCache;
 import net.caffeinemc.mods.sodium.client.render.texture.SpriteUtil;
@@ -75,7 +76,7 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
         this.prepareCulling(cull);
         this.prepareAoInfo(model.useAmbientOcclusion());
 
-        ((FabricBakedModel) model).emitBlockQuads(blockView, state, pos, this.randomSupplier, this);
+        ((FabricBakedModel) model).emitBlockQuads(getEmitter(), blockView, state, pos, this.randomSupplier, this::isFaceCulled);
 
         this.level = null;
         this.type = null;
@@ -88,7 +89,6 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
     @Override
     protected void processQuad(MutableQuadViewImpl quad) {
         final RenderMaterial mat = quad.material();
-        final int colorIndex = mat.disableColorIndex() ? -1 : quad.colorIndex();
         final TriState aoMode = mat.ambientOcclusion();
         final ShadeMode shadeMode = mat.shadeMode();
         final LightMode lightMode;
@@ -99,17 +99,17 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
         }
         final boolean emissive = mat.emissive();
 
-        colorizeQuad(quad, colorIndex);
+        tintQuad(quad);
         shadeQuad(quad, lightMode, emissive, shadeMode);
         bufferQuad(quad);
     }
 
-    private void colorizeQuad(MutableQuadViewImpl quad, int colorIndex) {
-        if (colorIndex != -1) {
-            final int blockColor = 0xFF000000 | this.colorMap.getColor(this.state, this.level, this.pos, colorIndex);
+    private void tintQuad(MutableQuadViewImpl quad) {
+        if (quad.tintIndex() != -1) {
+            final int blockColor = 0xFF000000 | this.colorMap.getColor(this.state, this.level, this.pos, quad.tintIndex());
 
             for (int i = 0; i < 4; i++) {
-                quad.color(i, ColorHelper.multiplyColor(blockColor, quad.color(i)));
+                quad.color(i, ColorMixer.mulComponentWise(blockColor, quad.color(i)));
             }
         }
     }
@@ -121,7 +121,7 @@ public class NonTerrainBlockRenderContext extends AbstractBlockRenderContext {
         float[] brightnesses = this.quadLightData.br;
 
         for (int i = 0; i < 4; i++) {
-            quad.color(i, ColorHelper.multiplyRGB(quad.color(i), brightnesses[i]));
+            quad.color(i, ColorARGB.mulRGB(quad.color(i), brightnesses[i]));
         }
     }
 

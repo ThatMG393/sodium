@@ -24,13 +24,13 @@ public class RenderRegion {
     public static final int REGION_HEIGHT = 4;
     public static final int REGION_LENGTH = 8;
 
-    private static final int REGION_WIDTH_M = RenderRegion.REGION_WIDTH - 1;
-    private static final int REGION_HEIGHT_M = RenderRegion.REGION_HEIGHT - 1;
-    private static final int REGION_LENGTH_M = RenderRegion.REGION_LENGTH - 1;
+    public static final int REGION_WIDTH_M = RenderRegion.REGION_WIDTH - 1;
+    public static final int REGION_HEIGHT_M = RenderRegion.REGION_HEIGHT - 1;
+    public static final int REGION_LENGTH_M = RenderRegion.REGION_LENGTH - 1;
 
-    protected static final int REGION_WIDTH_SH = Integer.bitCount(REGION_WIDTH_M);
-    protected static final int REGION_HEIGHT_SH = Integer.bitCount(REGION_HEIGHT_M);
-    protected static final int REGION_LENGTH_SH = Integer.bitCount(REGION_LENGTH_M);
+    public static final int REGION_WIDTH_SH = Integer.bitCount(REGION_WIDTH_M);
+    public static final int REGION_HEIGHT_SH = Integer.bitCount(REGION_HEIGHT_M);
+    public static final int REGION_LENGTH_SH = Integer.bitCount(REGION_LENGTH_M);
 
     public static final int REGION_SIZE = REGION_WIDTH * REGION_HEIGHT * REGION_LENGTH;
 
@@ -62,6 +62,18 @@ public class RenderRegion {
 
     public static long key(int x, int y, int z) {
         return SectionPos.asLong(x, y, z);
+    }
+
+    public int getX() {
+        return this.x;
+    }
+
+    public int getY() {
+        return this.y;
+    }
+
+    public int getZ() {
+        return this.z;
     }
 
     public int getChunkX() {
@@ -217,9 +229,9 @@ public class RenderRegion {
 
             // the magic number 756 for the initial size is arbitrary, it was made up.
             var initialVertices = 756;
-            this.geometryArena = new GlBufferArena(commandList, REGION_SIZE * initialVertices, stride, stagingBuffer);
+            this.geometryArena = new GlBufferArena(commandList, REGION_SIZE * initialVertices, stride, stagingBuffer, false);
             var initialIndices = (initialVertices / 4) * 6;
-            this.indexArena = new GlBufferArena(commandList, REGION_SIZE * initialIndices, Integer.BYTES, stagingBuffer);
+            this.indexArena = new GlBufferArena(commandList, REGION_SIZE * initialIndices, Integer.BYTES, stagingBuffer, true);
         }
 
         public void updateTessellation(CommandList commandList, GlTessellation tessellation) {
