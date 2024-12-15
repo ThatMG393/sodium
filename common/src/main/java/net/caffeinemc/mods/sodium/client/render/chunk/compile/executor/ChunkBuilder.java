@@ -1,10 +1,13 @@
 package net.caffeinemc.mods.sodium.client.render.chunk.compile.executor;
 
+import com.mojang.jtracy.TracyClient;
+import com.mojang.jtracy.Zone;
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.BuilderTaskOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderTask;
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexType;
+import net.minecraft.SharedConstants;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.Mth;
 import org.apache.commons.lang3.Validate;
@@ -17,30 +20,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 public class ChunkBuilder {
-    /**
-     * The low and high efforts given to the sorting and meshing tasks,
-     * respectively. This split into two separate effort categories means more
-     * sorting tasks, which are faster, can be scheduled compared to mesh tasks.
-     * These values need to capture that there's a limit to how much data can be
-     * uploaded per frame. Since sort tasks generate index data, which is smaller
-     * per quad and (on average) per section, more of their results can be uploaded
-     * in one frame. This number should essentially be a conservative estimate of
-     * min((mesh task upload size) / (sort task upload size), (mesh task time) /
-     * (sort task time)).
-     */
-    public static final int HIGH_EFFORT = 10;
-    public static final int LOW_EFFORT = 1;
-    public static final int EFFORT_PER_THREAD_PER_FRAME = HIGH_EFFORT + LOW_EFFORT;
-    private static final float HIGH_EFFORT_BUDGET_FACTOR = (float)HIGH_EFFORT / EFFORT_PER_THREAD_PER_FRAME;
-
     static final Logger LOGGER = LogManager.getLogger("ChunkBuilder");
 
     private final ChunkJobQueue queue = new ChunkJobQueue();
-
     private final List<Thread> threads = new ArrayList<>();
-
     private final AtomicInteger busyThreadCount = new AtomicInteger();
-
     private final ChunkBuildContext localContext;
 
     public ChunkBuilder(ClientLevel level, ChunkVertexType vertexType) {
@@ -48,7 +32,7 @@ public class ChunkBuilder {
 
         for (int i = 0; i < count; i++) {
             ChunkBuildContext context = new ChunkBuildContext(level, vertexType);
-            WorkerRunnable worker = new WorkerRunnable(context);
+            WorkerRunnable worker = new WorkerRunnable("Chunk Render Task Executor #" + i, context);
 
             Thread thread = new Thread(worker, "Chunk Render Task Executor #" + i);
             thread.setPriority(Math.max(0, Thread.NORM_PRIORITY - 2));
@@ -66,16 +50,8 @@ public class ChunkBuilder {
      * Returns the remaining effort for tasks which should be scheduled this frame. If an attempt is made to
      * spawn more tasks than the budget allows, it will block until resources become available.
      */
-    private int getTotalRemainingBudget() {
-        return Math.max(0, this.threads.size() * EFFORT_PER_THREAD_PER_FRAME - this.queue.getEffortSum());
-    }
-
-    public int getHighEffortSchedulingBudget() {
-        return Math.max(HIGH_EFFORT, (int) (this.getTotalRemainingBudget() * HIGH_EFFORT_BUDGET_FACTOR));
-    }
-
-    public int getLowEffortSchedulingBudget() {
-        return Math.max(LOW_EFFORT, this.getTotalRemainingBudget() - this.getHighEffortSchedulingBudget());
+    public long getTotalRemainingDuration(long durationPerThread) {
+        return Math.max(0, this.threads.size() * durationPerThread - this.queue.getJobDurationSum());
     }
 
     /**
@@ -169,8 +145,8 @@ public class ChunkBuilder {
         return this.queue.size();
     }
 
-    public int getScheduledEffort() {
-        return this.queue.getEffortSum();
+    public float getBusyFraction(long frameDuration) {
+        return (float) this.queue.getJobDurationSum() / (frameDuration * this.threads.size());
     }
 
     public int getBusyThreadCount() {
@@ -184,9 +160,11 @@ public class ChunkBuilder {
     private class WorkerRunnable implements Runnable {
         // Making this thread-local provides a small boost to performance by avoiding the overhead in synchronizing
         // caches between different CPU cores
+        private final String name;
         private final ChunkBuildContext context;
 
-        public WorkerRunnable(ChunkBuildContext context) {
+        public WorkerRunnable(String name, ChunkBuildContext context) {
+            this.name = name;
             this.context = context;
         }
 
@@ -209,6 +187,8 @@ public class ChunkBuilder {
 
                 ChunkBuilder.this.busyThreadCount.getAndIncrement();
 
+                Zone zone = TracyClient.beginZone(name, SharedConstants.IS_RUNNING_IN_IDE);
+
                 try {
                     job.execute(this.context);
                 } finally {
@@ -216,6 +196,8 @@ public class ChunkBuilder {
 
                     ChunkBuilder.this.busyThreadCount.decrementAndGet();
                 }
+
+                zone.close();
             }
         }
     }

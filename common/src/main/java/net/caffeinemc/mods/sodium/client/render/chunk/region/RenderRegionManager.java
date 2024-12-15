@@ -18,6 +18,8 @@ import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionMeshParts
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 
+import net.minecraft.util.profiling.Profiler;
+import net.minecraft.util.profiling.ProfilerFiller;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -102,12 +104,16 @@ public class RenderRegionManager {
             }
         }
 
+        ProfilerFiller profiler = Profiler.get();
+
         // If we have nothing to upload, abort!
         if (uploads.isEmpty() && indexUploads.isEmpty()) {
             return;
         }
 
         var resources = region.createResources(commandList);
+
+        profiler.push("upload_vertices");
 
         if (!uploads.isEmpty()) {
             var arena = resources.getGeometryArena();
@@ -128,6 +134,8 @@ public class RenderRegionManager {
             }
         }
 
+        profiler.popPush("upload_indices");
+
         if (!indexUploads.isEmpty()) {
             var arena = resources.getIndexArena();
             boolean bufferChanged = arena.upload(commandList, indexUploads.stream()
@@ -142,6 +150,8 @@ public class RenderRegionManager {
                 storage.setIndexData(upload.section.getSectionIndex(), upload.indexBufferUpload.getResult());
             }
         }
+
+        profiler.pop();
     }
 
     private Reference2ReferenceMap.FastEntrySet<RenderRegion, List<BuilderTaskOutput>> createMeshUploadQueues(Collection<BuilderTaskOutput> results) {
@@ -176,6 +186,12 @@ public class RenderRegionManager {
         return this.create(chunkX >> RenderRegion.REGION_WIDTH_SH,
                 chunkY >> RenderRegion.REGION_HEIGHT_SH,
                 chunkZ >> RenderRegion.REGION_LENGTH_SH);
+    }
+
+    public RenderRegion getForChunk(int chunkX, int chunkY, int chunkZ) {
+        return this.regions.get(RenderRegion.key(chunkX >> RenderRegion.REGION_WIDTH_SH,
+                chunkY >> RenderRegion.REGION_HEIGHT_SH,
+                chunkZ >> RenderRegion.REGION_LENGTH_SH));
     }
 
     @NotNull

@@ -1,6 +1,7 @@
 package net.caffeinemc.mods.sodium.client.render.immediate.model;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.caffeinemc.mods.sodium.api.util.ColorMixer;
 import net.caffeinemc.mods.sodium.client.model.quad.ModelQuadView;
 import net.caffeinemc.mods.sodium.api.math.MatrixHelper;
 import net.caffeinemc.mods.sodium.api.util.ColorABGR;
@@ -23,7 +24,7 @@ public class BakedModelEncoder {
 
     private static final boolean MULTIPLY_ALPHA = PlatformRuntimeInformation.getInstance().usesAlphaMultiplication();
 
-    public static void writeQuadVertices(VertexBufferWriter writer, PoseStack.Pose matrices, ModelQuadView quad, int color, int light, int overlay) {
+    public static void writeQuadVertices(VertexBufferWriter writer, PoseStack.Pose matrices, ModelQuadView quad, int color, int light, int overlay, boolean colorize) {
         Matrix3f matNormal = matrices.normal();
         Matrix4f matPosition = matrices.pose();
 
@@ -37,7 +38,13 @@ public class BakedModelEncoder {
                 float y = quad.getY(i);
                 float z = quad.getZ(i);
 
-                int newLight = mergeLighting(quad.getLight(i), light);
+                int newLight = mergeLighting(quad.getMaxLightQuad(i), light);
+
+                int newColor = color;
+
+                if (colorize) {
+                    newColor = ColorMixer.mulComponentWise(newColor, quad.getColor(i));
+                }
 
                 // The packed transformed normal vector
                 int normal = MatrixHelper.transformNormal(matNormal, matrices.trustedNormals, quad.getAccurateNormal(i));
@@ -47,7 +54,7 @@ public class BakedModelEncoder {
                 float yt = MatrixHelper.transformPositionY(matPosition, x, y, z);
                 float zt = MatrixHelper.transformPositionZ(matPosition, x, y, z);
 
-                EntityVertex.write(ptr, xt, yt, zt, color, quad.getTexU(i), quad.getTexV(i), overlay, newLight, normal);
+                EntityVertex.write(ptr, xt, yt, zt, newColor, quad.getTexU(i), quad.getTexV(i), overlay, newLight, normal);
                 ptr += EntityVertex.STRIDE;
             }
 
@@ -115,5 +122,9 @@ public class BakedModelEncoder {
 
             writer.push(stack, buffer, 4, EntityVertex.FORMAT);
         }
+    }
+
+    public static boolean shouldMultiplyAlpha() {
+        return MULTIPLY_ALPHA;
     }
 }
