@@ -102,7 +102,7 @@ public class BlockRenderer extends AbstractBlockRenderContext {
 
         for (RenderType type : renderTypes) {
             this.type = type;
-            ((FabricBakedModel) model).emitBlockQuads(this.level, state, pos, this.randomSupplier, this);
+            ((FabricBakedModel) model).emitBlockQuads(getEmitter(), this.level, state, pos, this.randomSupplier, this::isFaceCulled);
         }
 
         type = null;
@@ -115,7 +115,6 @@ public class BlockRenderer extends AbstractBlockRenderContext {
     @Override
     protected void processQuad(MutableQuadViewImpl quad) {
         final RenderMaterial mat = quad.material();
-        final int colorIndex = mat.disableColorIndex() ? -1 : quad.colorIndex();
         final TriState aoMode = mat.ambientOcclusion();
         final ShadeMode shadeMode = mat.shadeMode();
         final LightMode lightMode;
@@ -135,13 +134,15 @@ public class BlockRenderer extends AbstractBlockRenderContext {
             material = DefaultMaterials.forRenderLayer(blendMode.blockRenderLayer == null ? type : blendMode.blockRenderLayer);
         }
 
-        this.colorizeQuad(quad, colorIndex);
+        this.tintQuad(quad);
         this.shadeQuad(quad, lightMode, emissive, shadeMode);
         this.bufferQuad(quad, this.quadLightData.br, material);
     }
 
-    private void colorizeQuad(MutableQuadViewImpl quad, int colorIndex) {
-        if (colorIndex != -1) {
+    private void tintQuad(MutableQuadViewImpl quad) {
+        int tintIndex = quad.tintIndex();
+
+        if (tintIndex != -1) {
             ColorProvider<BlockState> colorProvider = this.colorProvider;
 
             if (colorProvider != null) {
@@ -256,14 +257,23 @@ public class BlockRenderer extends AbstractBlockRenderContext {
     }
 
     private static TerrainRenderPass getDowngradedPass(TextureAtlasSprite sprite, TerrainRenderPass pass) {
-        if (sprite.contents() instanceof SpriteContentsExtension contents) {
-            if (pass == DefaultTerrainRenderPasses.TRANSLUCENT && !contents.sodium$hasTranslucentPixels()) {
-                pass = DefaultTerrainRenderPasses.CUTOUT;
+        if (sprite instanceof TextureAtlasSpriteExtension spriteExt) {
+            // Some mods may use a custom ticker which we cannot look into. To avoid problems with these mods,
+            // do not attempt to downgrade the render pass.
+            if (spriteExt.sodium$hasUnknownImageContents()) {
+                return pass;
             }
-            if (pass == DefaultTerrainRenderPasses.CUTOUT && !contents.sodium$hasTransparentPixels()) {
-                pass = DefaultTerrainRenderPasses.SOLID;
+
+            if (sprite.contents() instanceof SpriteContentsExtension contentsExt) {
+                if (pass == DefaultTerrainRenderPasses.TRANSLUCENT && !contentsExt.sodium$hasTranslucentPixels()) {
+                    pass = DefaultTerrainRenderPasses.CUTOUT;
+                }
+                if (pass == DefaultTerrainRenderPasses.CUTOUT && !contentsExt.sodium$hasTransparentPixels()) {
+                    pass = DefaultTerrainRenderPasses.SOLID;
+                }
             }
         }
+
         return pass;
     }
 }
