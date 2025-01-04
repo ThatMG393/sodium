@@ -264,6 +264,7 @@ public class DefaultFluidRenderer {
             }
         }
     }
+    }
 
     private static boolean isAlignedEquals(float a, float b) {
         return Math.abs(a - b) <= ALIGNED_EQUALS_EPSILON;
