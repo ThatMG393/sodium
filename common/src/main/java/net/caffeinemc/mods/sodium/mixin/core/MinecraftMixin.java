@@ -66,7 +66,32 @@ public class MinecraftMixin {
         var fence = GL32C.glFenceSync(GL32C.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
         if (fence == 0) {
-            throw new RuntimeException("Failed to create fence object");
+            // Capture and print specific error details
+            int errorCode = GL32C.glGetError();
+            System.err.println("Fence Sync Creation Failed!");
+            System.err.println("OpenGL Error Code: " + errorCode);
+    
+            // Optional: More detailed error logging
+            switch (errorCode) {
+                case GL32C.GL_INVALID_ENUM:
+                    System.err.println("Invalid enum parameter");
+                    break;
+                case GL32C.GL_INVALID_VALUE:
+                    System.err.println("Invalid value parameter");
+                    break;
+                case GL32C.GL_INVALID_OPERATION:
+                    System.err.println("Invalid operation");
+                    break;
+                default:
+                    System.err.println("Unknown OpenGL error");
+            }
+    
+            // Print current thread and stack trace for context
+            Thread currentThread = Thread.currentThread();
+            System.err.println("Thread: " + currentThread.getName());
+    
+            // Optional: Dump full stack trace
+            new Exception("Fence Sync Creation Trace").printStackTrace();
         }
 
         this.fences.enqueue(fence);
