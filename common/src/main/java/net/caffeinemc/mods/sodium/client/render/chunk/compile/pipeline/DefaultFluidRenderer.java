@@ -219,7 +219,6 @@ public class DefaultFluidRenderer {
                 z1 = 0.0f;
                 z2 = 1.0F;
             }
-            default -> continue;
         }
 
         if (this.isSideExposed(level, posX, posY, posZ, dir, Math.max(c1, c2))) {
