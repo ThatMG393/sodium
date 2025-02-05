@@ -176,9 +176,6 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
 
         int size = batch.size;
 
-        long elementOffset = SectionRenderDataUnsafe.getBaseElement(pMeshData);
-        long baseVertex = SectionRenderDataUnsafe.getBaseVertex(pMeshData);
-
         for (int facing = 0; facing < ModelQuadFacing.COUNT; facing++) {
             // Uint32 -> Int32 cast is always safe and should be optimized away
             MemoryUtil.memPutInt(pBaseVertex + (size << 2), (int) SectionRenderDataUnsafe.getVertexOffset(pMeshData, facing));
@@ -200,33 +197,27 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
         final var pBaseVertex = batch.pBaseVertex;
         final var pElementCount = batch.pElementCount;
 
-        // this is either zero (global shared index buffer) or the offset to the location of the shared element buffer (region shared index buffer)
-        final var elementOffsetBytes = SectionRenderDataUnsafe.getBaseElement(pMeshData) << 2;
-        final var facingList = SectionRenderDataUnsafe.getFacingList(pMeshData);
-
         int size = batch.size;
-        long groupVertexCount = 0;
-        long baseVertex = SectionRenderDataUnsafe.getBaseVertex(pMeshData);
-        int lastMaskBit = 0;
 
-        for (int i = 0; i <= ModelQuadFacing.COUNT; i++) {
-            var maskBit = 0;
-            long vertexCount = 0;
-            if (i < ModelQuadFacing.COUNT) {
-                vertexCount = SectionRenderDataUnsafe.getVertexCount(pMeshData, i);
+        long elementOffset = SectionRenderDataUnsafe.getBaseElement(pMeshData);
 
-                // if there's no vertexes, the mask bit is just 0
-                if (vertexCount != 0) {
-                    var facing = (facingList >>> (i * 8)) & 0xFF;
-                    maskBit = (mask >>> facing) & 1;
-                }
-            }
+        for (int facing = 0; facing < ModelQuadFacing.COUNT; facing++) {
+            final long vertexOffset = SectionRenderDataUnsafe.getVertexOffset(pMeshData, facing);
+            final long elementCount = SectionRenderDataUnsafe.getElementCount(pMeshData, facing);
+
+            // Uint32 -> Int32 cast is always safe and should be optimized away
+            MemoryUtil.memPutInt(pBaseVertex + (size << 2), UInt32.uncheckedDowncast(vertexOffset));
+            MemoryUtil.memPutInt(pElementCount + (size << 2), UInt32.uncheckedDowncast(elementCount));
 
             // * 4 to convert to bytes (the index buffer contains integers)
             // the section render data storage for the indices stores the offset in indices (also called elements)
             MemoryUtil.memPutAddress(pElementPointer + (size << Pointer.POINTER_SHIFT), elementOffset << 2);
-            lastMaskBit = maskBit;
+
+            // adding the number of elements works because the index data has one index per element (which are the indices)
+            elementOffset += elementCount;
+            size += (mask >> facing) & 1;
         }
+
         batch.size = size;
     }
 
