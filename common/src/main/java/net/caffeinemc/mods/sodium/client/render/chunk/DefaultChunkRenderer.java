@@ -1,6 +1,7 @@
 package net.caffeinemc.mods.sodium.client.render.chunk;
 
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
+import net.caffeinemc.mods.sodium.client.gl.attribute.GlVertexAttributeBinding;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.gl.device.DrawCommandList;
 import net.caffeinemc.mods.sodium.client.gl.device.MultiDrawBatch;
@@ -15,6 +16,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.data.SectionRenderDataUnsa
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderListIterable;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
+import net.caffeinemc.mods.sodium.client.render.chunk.shader.ChunkShaderBindingPoints;
 import net.caffeinemc.mods.sodium.client.render.chunk.shader.ChunkShaderInterface;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.SortBehavior;
@@ -71,7 +73,7 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
                 continue;
             }
 
-            fillCommandBuffer(this.batch, region, storage, renderList, camera, renderPass, useBlockFaceCulling, useIndexedTessellation);
+            fillCommandBuffer(this.batch, region, storage, renderList, camera, renderPass, useBlockFaceCulling);
 
             if (this.batch.isEmpty()) {
                 continue;
@@ -108,8 +110,7 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
                                           ChunkRenderList renderList,
                                           CameraTransform camera,
                                           TerrainRenderPass pass,
-                                          boolean useBlockFaceCulling,
-                                          boolean useIndexedTessellation) {
+                                          boolean useBlockFaceCulling) {
         batch.clear();
 
         var iterator = renderList.sectionsWithGeometryIterator(pass.isTranslucent());
@@ -149,27 +150,19 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
                 continue;
             }
 
-            // it's necessary to sometimes not the locally-indexed command generator even for indexed tessellations since
-            // sometimes the index buffer is shared, but not globally shared. This means that translucent sections that
-            // are sharing an index buffer amongst them need to use the shared index command generator since it sets the
-            // same element offset for each draw command and doesn't increment it. Recall that in each draw command the indexing
-            // of the elements needs to start at 0 and thus starting somewhere further into the shared index buffer is invalid.
-            // there's also the optimization that draw commands can be combined when using a shared index buffer, be it
-            // globally shared or just shared within the region, which isn't possible with the locally-indexed command generator.
-            if (useIndexedTessellation && SectionRenderDataUnsafe.isLocalIndex(pMeshData)) {
-                addLocalIndexedDrawCommands(batch, pMeshData, slices);
+            if (pass.isTranslucent()) {
+                addIndexedDrawCommands(batch, pMeshData, slices);
             } else {
-                addSharedIndexedDrawCommands(batch, pMeshData, slices);
+                addNonIndexedDrawCommands(batch, pMeshData, slices);
             }
         }
     }
 
     /**
-     * Generates the draw commands for a chunk's meshes, where each mesh has a separate index buffer. This is used
-     * when rendering translucent geometry, as each geometry set needs a sorted index buffer.
+     * Generates the draw commands for a chunk's meshes using the shared index buffer.
      */
     @SuppressWarnings("IntegerMultiplicationImplicitCastToLong")
-    private static void addLocalIndexedDrawCommands(MultiDrawBatch batch, long pMeshData, int mask) {
+    private static void addNonIndexedDrawCommands(MultiDrawBatch batch, long pMeshData, int mask) {
         final var pElementPointer = batch.pElementPointer;
         final var pBaseVertex = batch.pBaseVertex;
         final var pElementCount = batch.pElementCount;
@@ -189,10 +182,11 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
     }
 
     /**
-     * Generates the draw commands for a chunk's meshes using the shared index buffer.
+     * Generates the draw commands for a chunk's meshes, where each mesh has a separate index buffer. This is used
+     * when rendering translucent geometry, as each geometry set needs a sorted index buffer.
      */
     @SuppressWarnings("IntegerMultiplicationImplicitCastToLong")
-    private static void addSharedIndexedDrawCommands(MultiDrawBatch batch, long pMeshData, int mask) {
+    private static void addIndexedDrawCommands(MultiDrawBatch batch, long pMeshData, int mask) {
         final var pElementPointer = batch.pElementPointer;
         final var pBaseVertex = batch.pBaseVertex;
         final var pElementCount = batch.pElementCount;
@@ -230,7 +224,7 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
     private static final int MODEL_NEG_Y      = ModelQuadFacing.NEG_Y.ordinal();
     private static final int MODEL_NEG_Z      = ModelQuadFacing.NEG_Z.ordinal();
 
-    public static int getVisibleFaces(int originX, int originY, int originZ, int chunkX, int chunkY, int chunkZ) {
+    private static int getVisibleFaces(int originX, int originY, int originZ, int chunkX, int chunkY, int chunkZ) {
         // This is carefully written so that we can keep everything branch-less.
         //
         // Normally, this would be a ridiculous way to handle the problem. But the Hotspot VM's
