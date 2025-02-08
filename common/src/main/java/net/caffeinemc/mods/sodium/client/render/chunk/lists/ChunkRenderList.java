@@ -84,7 +84,7 @@ public class ChunkRenderList {
 
         int flags = this.region.getSectionFlags(localSectionIndex);
         if (((flags >>> RenderSectionFlags.HAS_BLOCK_GEOMETRY) & 1) != 0) {
-            var byteIndex = (byte) index;
+            var byteIndex = (byte) localSectionIndex;
             if (this.sectionsWithGeometry[this.sectionsWithGeometryCount] != byteIndex) {
                 this.sectionsWithGeometry[this.sectionsWithGeometryCount] = byteIndex;
                 this.prevSectionsWithGeometryCount = -1;
