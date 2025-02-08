@@ -77,6 +77,7 @@ public class RenderRegionManager {
 
                     if (storage != null) {
                         storage.removeVertexData(renderSectionIndex);
+                        region.clearCachedBatchFor(pass);
                     }
 
                     BuiltSectionMeshParts mesh = chunkBuildOutput.getMesh(pass);
@@ -109,8 +110,12 @@ public class RenderRegionManager {
                     if (buffer == null) {
                         continue;
                     }
-
-                    indexUploads.add(new PendingSectionIndexBufferUpload(result.render, new PendingUpload(buffer)));
+                }
+                  
+                var storage = region.getStorage(DefaultTerrainRenderPasses.TRANSLUCENT);
+                if (storage != null) {
+                    storage.removeIndexData(renderSectionIndex);
+                    region.clearCachedBatchFor(DefaultTerrainRenderPasses.TRANSLUCENT);
                 }
             }
         }
@@ -137,6 +142,7 @@ public class RenderRegionManager {
             // Once invalidated the tessellation will be re-created on the next attempted use
             if (bufferChanged) {
                 region.refreshTesselation(commandList);
+                region.clearAllCachedBatches();
             }
 
             // Collect the upload results
@@ -155,6 +161,12 @@ public class RenderRegionManager {
             indexBufferChanged = arena.upload(commandList, indexUploads.stream()
                     .map(upload -> upload.indexBufferUpload));
 
+
+            if (bufferChanged) {
+                region.refreshIndexedTesselation(commandList);
+                region.clearCachedBatchFor(DefaultTerrainRenderPasses.TRANSLUCENT);
+            }
+            
             for (PendingSectionIndexBufferUpload upload : indexUploads) {
                 var storage = region.createStorage(DefaultTerrainRenderPasses.TRANSLUCENT);
                 storage.setIndexData(upload.section.getSectionIndex(), upload.indexBufferUpload.getResult());
