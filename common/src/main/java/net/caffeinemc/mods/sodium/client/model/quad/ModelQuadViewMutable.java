@@ -69,7 +69,7 @@ public interface ModelQuadViewMutable extends ModelQuadView {
     void setLightFace(Direction direction);
 
     /**
-     * Sets the tint index used by this quad
+     * Sets the color index used by this quad
      */
-    void setTintIndex(int index);
+    void setColorIndex(int index);
 }

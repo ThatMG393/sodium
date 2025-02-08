@@ -12,8 +12,7 @@ public class RenderAsserts {
      */
     public static boolean validateCurrentThread() {
         if (!RenderSystem.isOnRenderThread()) {
-            throw new IllegalStateException("Tried to access render state from outside the main render thread! " +
-                    "This was very likely caused by another misbehaving mod -- make sure to examine the stack trace below.");
+            throw new IllegalStateException("Accessing OpenGL functions from outside the main render thread is not supported when using Sodium");
         }
 
         return true;

@@ -33,7 +33,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -59,15 +58,10 @@ public abstract class AbstractBlockRenderContext extends AbstractRenderContext {
             STANDARD_MATERIALS[i] = SodiumRenderer.INSTANCE.materialFinder().ambientOcclusion(state).find();
         }
     }
-
-    public class BlockEmitter extends MutableQuadViewImpl {
+    private final MutableQuadViewImpl editorQuad = new MutableQuadViewImpl() {
         {
             data = new int[EncodingFormat.TOTAL_STRIDE];
             clear();
-        }
-
-        public void bufferDefaultModel(BakedModel model, BlockState state, Predicate<Direction> cullTest) {
-            AbstractBlockRenderContext.this.bufferDefaultModel(model, state, cullTest);
         }
 
         @Override
@@ -77,11 +71,7 @@ public abstract class AbstractBlockRenderContext extends AbstractRenderContext {
             }
             renderQuad(this);
         }
-    }
-
-
-
-    private final BlockEmitter editorQuad = new BlockEmitter();
+    };
 
     /**
      * The world which the block is being rendered in.
@@ -138,6 +128,7 @@ public abstract class AbstractBlockRenderContext extends AbstractRenderContext {
         return this.editorQuad;
     }
 
+    @Override
     public boolean isFaceCulled(@Nullable Direction face) {
         if (face == null || !this.enableCulling) {
             return false;
@@ -159,10 +150,19 @@ public abstract class AbstractBlockRenderContext extends AbstractRenderContext {
         }
     }
 
+    @Override
+    public ItemDisplayContext itemTransformationMode() {
+        throw new UnsupportedOperationException("itemTransformationMode can only be called on an item render context.");
+    }
+
     /**
      * Pipeline entrypoint - handles transform and culling checks.
      */
     private void renderQuad(MutableQuadViewImpl quad) {
+        if (!this.transform(quad)) {
+            return;
+        }
+
         if (this.isFaceCulled(quad.cullFace())) {
             return;
         }
@@ -207,44 +207,47 @@ public abstract class AbstractBlockRenderContext extends AbstractRenderContext {
     }
 
     /* Handling of vanilla models - this is the hot path for non-modded models */
-    public void bufferDefaultModel(BakedModel model, @Nullable BlockState state, Predicate<Direction> cullTest) {
+    public void bufferDefaultModel(BakedModel model, @Nullable BlockState state) {
         MutableQuadViewImpl editorQuad = this.editorQuad;
 
 
         // If there is no transform, we can check the culling face once for all the quads,
         // and we don't need to check for transforms per-quad.
+        boolean noTransform = !this.hasTransform();
 
         for (int i = 0; i <= ModelHelper.NULL_FACE_ID; i++) {
             final Direction cullFace = ModelHelper.faceFromIndex(i);
 
-            if (cullTest.test(cullFace)) {
-                continue;
-            }
-
             RandomSource random = this.randomSupplier.get();
             AmbientOcclusionMode ao = PlatformBlockAccess.getInstance().usesAmbientOcclusion(model, state, modelData, type, slice, pos);
+            if (noTransform) {
+                if (!this.isFaceCulled(cullFace)) {
+                    final List<BakedQuad> quads = PlatformModelAccess.getInstance().getQuads(level, pos, model, state, cullFace, random, type, modelData);
+                    final int count = quads.size();
 
-            final List<BakedQuad> quads = PlatformModelAccess.getInstance().getQuads(level, pos, model, state, cullFace, random, type, modelData);
-            final int count = quads.size();
+                    for (int j = 0; j < count; j++) {
+                        final BakedQuad q = quads.get(j);
+                        editorQuad.fromVanilla(q, (type == RenderType.tripwire() || type == RenderType.translucent()) ? TRANSLUCENT_MATERIAL : STANDARD_MATERIALS[ao.ordinal()], cullFace);
+                        // Call processQuad instead of emit for efficiency
+                        // (avoid unnecessarily clearing data, trying to apply transforms, and performing cull check again)
 
-            for (int j = 0; j < count; j++) {
-                final BakedQuad q = quads.get(j);
-                editorQuad.fromVanilla(q, (type == RenderType.tripwire() || type == RenderType.translucent()) ? TRANSLUCENT_MATERIAL : STANDARD_MATERIALS[ao.ordinal()], cullFace);
-                // Call processQuad instead of emit for efficiency
-                // (avoid unnecessarily clearing data, trying to apply transforms, and performing cull check again)
+                        this.processQuad(editorQuad);
+                    }
+                }
+            } else {
+                final List<BakedQuad> quads = PlatformModelAccess.getInstance().getQuads(level, pos, model, state, cullFace, random, type, modelData);
+                final int count = quads.size();
 
-                editorQuad.transformAndEmit();
+                for (int j = 0; j < count; j++) {
+                    final BakedQuad q = quads.get(j);
+                    editorQuad.fromVanilla(q, (type == RenderType.tripwire() || type == RenderType.translucent()) ? TRANSLUCENT_MATERIAL : STANDARD_MATERIALS[ao.ordinal()], cullFace);
+                    // Call renderQuad instead of emit for efficiency
+                    // (avoid unnecessarily clearing data)
+                    this.renderQuad(editorQuad);
+                }
             }
         }
 
         editorQuad.clear();
-    }
-
-    public SodiumModelData getModelData() {
-        return modelData;
-    }
-
-    public RenderType getRenderType() {
-        return type;
     }
 }

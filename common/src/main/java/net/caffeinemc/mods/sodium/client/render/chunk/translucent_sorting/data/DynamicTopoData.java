@@ -9,6 +9,7 @@ import org.joml.Vector3dc;
 import org.joml.Vector3fc;
 
 import java.nio.IntBuffer;
+import java.util.Arrays;
 import java.util.function.IntConsumer;
 
 /**
@@ -220,22 +221,30 @@ public class DynamicTopoData extends DynamicData {
      */
     static void distanceSortDirect(IntBuffer indexBuffer, TQuad[] quads, Vector3fc cameraPos) {
         if (quads.length <= 1) {
-            // Avoid allocations when there is nothing to sort.
             TranslucentData.writeQuadVertexIndexes(indexBuffer, 0);
-        } else {
+        } else if (RadixSort.useRadixSort(quads.length)) {
             final var keys = new int[quads.length];
-            final var perm = new int[quads.length];
 
-            for (int idx = 0; idx < quads.length; idx++) {
-                var centroid = quads[idx].getCenter();
-                keys[idx] = ~Float.floatToRawIntBits(centroid.distanceSquared(cameraPos));
-                perm[idx] = idx;
+            for (int q = 0; q < quads.length; q++) {
+                keys[q] = ~Float.floatToRawIntBits(quads[q].getCenter().distanceSquared(cameraPos));
             }
 
-            RadixSort.sortIndirect(perm, keys, false);
+            var indices = RadixSort.sort(keys);
 
-            for (int idx = 0; idx < quads.length; idx++) {
-                TranslucentData.writeQuadVertexIndexes(indexBuffer, perm[idx]);
+            for (int i = 0; i < quads.length; i++) {
+                TranslucentData.writeQuadVertexIndexes(indexBuffer, indices[i]);
+            }
+        } else {
+            final var data = new long[quads.length];
+            for (int q = 0; q < quads.length; q++) {
+                float distance = quads[q].getCenter().distanceSquared(cameraPos);
+                data[q] = (long) ~Float.floatToRawIntBits(distance) << 32 | q;
+            }
+
+            Arrays.sort(data);
+
+            for (int i = 0; i < quads.length; i++) {
+                TranslucentData.writeQuadVertexIndexes(indexBuffer, (int) data[i]);
             }
         }
     }

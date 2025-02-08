@@ -60,9 +60,9 @@ public interface ModelQuadView {
     int getFlags();
 
     /**
-     * @return The tint index of this quad.
+     * @return The color index of this quad.
      */
-    int getTintIndex();
+    int getColorIndex();
 
     /**
      * @return The sprite texture used by this quad, or null if none is attached
@@ -75,7 +75,7 @@ public interface ModelQuadView {
     Direction getLightFace();
 
     default boolean hasColor() {
-        return this.getTintIndex() != -1;
+        return this.getColorIndex() != -1;
     }
 
     default int calculateNormal() {

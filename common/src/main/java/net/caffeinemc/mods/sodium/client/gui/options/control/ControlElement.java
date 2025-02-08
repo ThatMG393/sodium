@@ -106,9 +106,4 @@ public class ControlElement<T> extends AbstractWidget {
     public ScreenRectangle getRectangle() {
         return new ScreenRectangle(this.dim.x(), this.dim.y(), this.dim.width(), this.dim.height());
     }
-
-    @Override
-    public boolean isMouseOver(double x, double y) {
-        return this.dim.containsCursor(x, y);
-    }
 }

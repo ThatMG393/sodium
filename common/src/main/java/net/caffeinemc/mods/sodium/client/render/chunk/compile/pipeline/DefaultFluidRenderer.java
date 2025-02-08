@@ -4,6 +4,7 @@ package net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline;
 import net.caffeinemc.mods.sodium.api.util.ColorARGB;
 import net.caffeinemc.mods.sodium.api.util.NormI8;
 import net.caffeinemc.mods.sodium.client.model.color.ColorProvider;
+import net.caffeinemc.mods.sodium.client.model.color.ColorProviderRegistry;
 import net.caffeinemc.mods.sodium.client.model.light.LightMode;
 import net.caffeinemc.mods.sodium.client.model.light.LightPipeline;
 import net.caffeinemc.mods.sodium.client.model.light.LightPipelineProvider;
@@ -27,6 +28,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.SupportType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
@@ -46,8 +49,6 @@ public class DefaultFluidRenderer {
     private final MutableFloat scratchHeight = new MutableFloat(0);
     private final MutableInt scratchSamples = new MutableInt();
 
-    private final BlockOcclusionCache occlusionCache = new BlockOcclusionCache();
-
     private final ModelQuadViewMutable quad = new ModelQuad();
 
     private final LightPipelineProvider lighters;
@@ -64,10 +65,21 @@ public class DefaultFluidRenderer {
         this.lighters = lighters;
     }
 
-    private boolean isFullBlockFluidOccluded(BlockAndTintGetter world, BlockPos pos, Direction dir, BlockState blockState, FluidState fluid) {
-        // check if this face of the fluid, assuming a full-block cull shape, is occluded by the block it's in or a neighboring block.
-        // it doesn't do a voxel shape comparison with the neighboring blocks since that is already done by isSideExposed
-        return !this.occlusionCache.shouldDrawFullBlockFluidSide(blockState, world, pos, dir, fluid, Shapes.block());
+    private boolean isFluidOccluded(BlockAndTintGetter world, int x, int y, int z, Direction dir, BlockState blockState, FluidState fluid) {
+        //Test own block state first, this prevents waterlogged blocks from having hidden internal geometry
+        // which can result in z-fighting
+        var pos = this.scratchPos.set(x, y, z);
+        if (blockState.canOcclude() && blockState.isFaceSturdy(world, pos, dir, SupportType.FULL)) {
+            return true;
+        }
+
+        //Test neighboring block state
+        var adjPos = this.scratchPos.set(x + dir.getStepX(), y + dir.getStepY(), z + dir.getStepZ());
+        BlockState adjBlockState = world.getBlockState(adjPos);
+        if (PlatformBlockAccess.getInstance().shouldOccludeFluid(dir.getOpposite(), adjBlockState, fluid)) {
+            return true;
+        }
+        return adjBlockState.canOcclude() && dir != Direction.UP && adjBlockState.isFaceSturdy(world, adjPos, dir.getOpposite(), SupportType.FULL);
     }
 
     private boolean isSideExposed(BlockAndTintGetter world, int x, int y, int z, Direction dir, float height) {
@@ -97,16 +109,15 @@ public class DefaultFluidRenderer {
 
         Fluid fluid = fluidState.getType();
 
-        boolean cullUp = this.isFullBlockFluidOccluded(level, blockPos, Direction.UP, blockState, fluidState);
-        boolean cullDown = this.isFullBlockFluidOccluded(level, blockPos, Direction.DOWN, blockState, fluidState) ||
+        boolean sfUp = this.isFluidOccluded(level, posX, posY, posZ, Direction.UP, blockState, fluidState);
+        boolean sfDown = this.isFluidOccluded(level, posX, posY, posZ, Direction.DOWN, blockState, fluidState) ||
                 !this.isSideExposed(level, posX, posY, posZ, Direction.DOWN, 0.8888889F);
-        boolean cullNorth = this.isFullBlockFluidOccluded(level, blockPos, Direction.NORTH, blockState, fluidState);
-        boolean cullSouth = this.isFullBlockFluidOccluded(level, blockPos, Direction.SOUTH, blockState, fluidState);
-        boolean cullWest = this.isFullBlockFluidOccluded(level, blockPos, Direction.WEST, blockState, fluidState);
-        boolean cullEast = this.isFullBlockFluidOccluded(level, blockPos, Direction.EAST, blockState, fluidState);
+        boolean sfNorth = this.isFluidOccluded(level, posX, posY, posZ, Direction.NORTH, blockState, fluidState);
+        boolean sfSouth = this.isFluidOccluded(level, posX, posY, posZ, Direction.SOUTH, blockState, fluidState);
+        boolean sfWest = this.isFluidOccluded(level, posX, posY, posZ, Direction.WEST, blockState, fluidState);
+        boolean sfEast = this.isFluidOccluded(level, posX, posY, posZ, Direction.EAST, blockState, fluidState);
 
-        // stop rendering if all faces of the fluid are occluded
-        if (cullUp && cullDown && cullEast && cullWest && cullNorth && cullSouth) {
+        if (sfUp && sfDown && sfEast && sfWest && sfNorth && sfSouth) {
             return;
         }
 
@@ -138,7 +149,7 @@ public class DefaultFluidRenderer {
                     .move(Direction.NORTH)
                     .move(Direction.EAST));
         }
-        float yOffset = cullDown ? 0.0F : EPSILON;
+        float yOffset = sfDown ? 0.0F : EPSILON;
 
         final ModelQuadViewMutable quad = this.quad;
 
@@ -147,7 +158,7 @@ public class DefaultFluidRenderer {
 
         quad.setFlags(0);
 
-        if (!cullUp && this.isSideExposed(level, posX, posY, posZ, Direction.UP, Math.min(Math.min(northWestHeight, southWestHeight), Math.min(southEastHeight, northEastHeight)))) {
+        if (!sfUp && this.isSideExposed(level, posX, posY, posZ, Direction.UP, Math.min(Math.min(northWestHeight, southWestHeight), Math.min(southEastHeight, northEastHeight)))) {
             northWestHeight -= EPSILON;
             southWestHeight -= EPSILON;
             southEastHeight -= EPSILON;
@@ -232,7 +243,7 @@ public class DefaultFluidRenderer {
             }
         }
 
-        if (!cullDown) {
+        if (!sfDown) {
             TextureAtlasSprite sprite = sprites[0];
 
             float minU = sprite.getU0();
@@ -262,7 +273,7 @@ public class DefaultFluidRenderer {
 
             switch (dir) {
                 case NORTH -> {
-                    if (cullNorth) {
+                    if (sfNorth) {
                         continue;
                     }
                     c1 = northWestHeight;
@@ -273,7 +284,7 @@ public class DefaultFluidRenderer {
                     z2 = z1;
                 }
                 case SOUTH -> {
-                    if (cullSouth) {
+                    if (sfSouth) {
                         continue;
                     }
                     c1 = southEastHeight;
@@ -284,7 +295,7 @@ public class DefaultFluidRenderer {
                     z2 = z1;
                 }
                 case WEST -> {
-                    if (cullWest) {
+                    if (sfWest) {
                         continue;
                     }
                     c1 = southWestHeight;
@@ -295,7 +306,7 @@ public class DefaultFluidRenderer {
                     z2 = 0.0f;
                 }
                 case EAST -> {
-                    if (cullEast) {
+                    if (sfEast) {
                         continue;
                     }
                     c1 = northEastHeight;
