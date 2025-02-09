@@ -75,18 +75,17 @@ public class ChunkRenderList {
         }
     }
 
-    public void add(RenderSection render) {
+    public void add(int localSectionIndex) {
         if (this.size >= RenderRegion.REGION_SIZE) {
             throw new ArrayIndexOutOfBoundsException("Render list is full");
         }
 
         this.size++;
 
-        int index = render.getSectionIndex();
-        int flags = render.getFlags();
+        int flags = this.region.getSectionFlags(localSectionIndex);
 
         if (((flags >>> RenderSectionFlags.HAS_BLOCK_GEOMETRY) & 1) != 0) {
-            var byteIndex = (byte) index;
+            var byteIndex = (byte) localSectionIndex;
             if (this.sectionsWithGeometry[this.sectionsWithGeometryCount] != byteIndex) {
                 this.sectionsWithGeometry[this.sectionsWithGeometryCount] = byteIndex;
                 this.prevSectionsWithGeometryCount = -1;
@@ -94,10 +93,10 @@ public class ChunkRenderList {
             this.sectionsWithGeometryCount++;
         }
 
-        this.sectionsWithSprites[this.sectionsWithSpritesCount] = (byte) index;
+        this.sectionsWithSprites[this.sectionsWithSpritesCount] = (byte) localSectionIndex;
         this.sectionsWithSpritesCount += (flags >>> RenderSectionFlags.HAS_ANIMATED_SPRITES) & 1;
 
-        this.sectionsWithEntities[this.sectionsWithEntitiesCount] = (byte) index;
+        this.sectionsWithEntities[this.sectionsWithEntitiesCount] = (byte) localSectionIndex;
         this.sectionsWithEntitiesCount += (flags >>> RenderSectionFlags.HAS_BLOCK_ENTITIES) & 1;
     }
     
